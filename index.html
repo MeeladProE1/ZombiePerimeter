@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zombie Perimeter - Survival Shooter</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+
+        :root {
+            --primary: #00ffcc;
+            --danger: #ff0055;
+            --gold: #ffcc00;
+            --bg: #050505;
+            --ui-bg: rgba(10, 20, 30, 0.9);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg);
+            font-family: 'Orbitron', sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        #gameCanvas {
+            display: block;
+        }
+
+        /* UI Overlays */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through to canvas when playing */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .hud-panel {
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+            font-size: 1.2rem;
+            text-shadow: 0 0 5px var(--primary);
+        }
+
+        #top-hud {
+            justify-content: space-between;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+        }
+
+        .stat-box span {
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        /* Menus (Start, Shop, Game Over) */
+        .menu-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--ui-bg);
+            padding: 40px;
+            border: 2px solid var(--primary);
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
+            pointer-events: auto;
+            display: none;
+            min-width: 400px;
+            backdrop-filter: blur(5px);
+        }
+
+        .menu-overlay.active {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        h1 { margin: 0 0 10px 0; color: var(--primary); font-size: 2.5rem; text-transform: uppercase; }
+        h2 { margin: 0 0 20px 0; font-size: 1.5rem; }
+        p { color: #aaa; margin-bottom: 20px; }
+
+        button {
+            background: transparent;
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            padding: 12px 24px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background: var(--primary);
+            color: black;
+            box-shadow: 0 0 15px var(--primary);
+        }
+
+        button:disabled {
+            border-color: #555;
+            color: #555;
+            cursor: not-allowed;
+            box-shadow: none;
+            background: transparent;
+        }
+
+        /* Shop Grid */
+        .shop-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .shop-item {
+            border: 1px solid #333;
+            padding: 15px;
+            border-radius: 5px;
+            background: rgba(0,0,0,0.3);
+            text-align: left;
+            transition: border-color 0.2s;
+        }
+
+        .shop-item:hover {
+            border-color: #555;
+        }
+        
+        .shop-item.gold-border {
+            border-color: var(--gold);
+        }
+
+        .shop-item h3 { margin: 0 0 5px 0; font-size: 1rem; color: #fff; }
+        .shop-item p { margin: 0 0 10px 0; font-size: 0.8rem; color: #888; }
+        
+        .upgrade-btn {
+            width: 100%;
+            padding: 8px;
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .health-bar-container {
+            width: 200px;
+            height: 20px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #health-fill {
+            height: 100%;
+            width: 100%;
+            background: var(--danger);
+            transition: width 0.2s;
+        }
+        
+        #health-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 12px;
+            font-weight: bold;
+            text-shadow: 1px 1px 1px black;
+        }
+
+        #message-area {
+            position: absolute;
+            top: 20%;
+            width: 100%;
+            text-align: center;
+            font-size: 2rem;
+            font-weight: bold;
+            opacity: 0;
+            pointer-events: none;
+            color: #fff;
+            text-shadow: 0 0 10px var(--danger);
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -40%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+        @keyframes popUp { 0% { opacity: 0; transform: scale(0.5); } 50% { opacity: 1; transform: scale(1.2); } 100% { opacity: 0; transform: scale(1); } }
+
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="top-hud" class="hud-panel">
+            <div class="stat-box">WAVE: <span id="wave-disp">1</span></div>
+            <div class="health-bar-container">
+                <div id="health-fill"></div>
+                <div id="health-text">100 / 100</div>
+            </div>
+            <div class="stat-box">CASH: $<span id="money-disp">0</span></div>
+        </div>
+        <div id="message-area">WAVE COMPLETE</div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="menu-overlay active">
+        <h1>Zombie Perimeter</h1>
+        <p>Survive the waves. Upgrade your gear. Don't die.</p>
+        <p style="font-size: 0.9rem; color: #fff;">WASD to Move | Mouse to Aim & Shoot</p>
+        <button onclick="startGame()">Initialize Combat</button>
+    </div>
+
+    <!-- Shop Screen -->
+    <div id="shop-screen" class="menu-overlay">
+        <h2>Armory & Medbay</h2>
+        <p>Cash Available: $<span id="shop-money">0</span></p>
+        
+        <div class="shop-grid">
+            <div class="shop-item">
+                <h3>Repair Kit</h3>
+                <p>Heal 30 HP</p>
+                <button class="upgrade-btn" id="btn-heal" onclick="buyUpgrade('heal')">
+                    <span>Buy</span> <span>$100</span>
+                </button>
+            </div>
+            <div class="shop-item">
+                <h3>Polished Barrel</h3>
+                <p>+Damage</p>
+                <button class="upgrade-btn" id="btn-dmg" onclick="buyUpgrade('damage')">
+                    <span>Upgrade</span> <span id="cost-damage">$200</span>
+                </button>
+            </div>
+            <div class="shop-item">
+                <h3>Rapid Trigger</h3>
+                <p>+Fire Rate</p>
+                <button class="upgrade-btn" id="btn-rate" onclick="buyUpgrade('rate')">
+                    <span>Upgrade</span> <span id="cost-rate">$250</span>
+                </button>
+            </div>
+            <div class="shop-item">
+                <h3>Hydraulics</h3>
+                <p>+Move Speed</p>
+                <button class="upgrade-btn" id="btn-speed" onclick="buyUpgrade('speed')">
+                    <span>Upgrade</span> <span id="cost-speed">$150</span>
+                </button>
+            </div>
+             <!-- Multi-Shot Upgrade -->
+             <div class="shop-item gold-border" style="grid-column: span 2;">
+                <h3 style="color: var(--gold);">Multi-Shot System</h3>
+                <p>Double/Triple Shot</p>
+                <button class="upgrade-btn" id="btn-multi" onclick="buyUpgrade('multishot')">
+                    <span>Upgrade</span> <span id="cost-multi">$500</span>
+                </button>
+            </div>
+        </div>
+
+        <button onclick="nextWave()">Start Wave <span id="next-wave-num">2</span></button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="menu-overlay">
+        <h1 style="color: var(--danger)">KIA</h1>
+        <p>You were overrun.</p>
+        <p>Waves Survived: <span id="final-wave">0</span></p>
+        <button onclick="location.reload()">Re-Deploy</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // --- Configuration & State ---
+        let width, height;
+        
+        const GAME_STATE = {
+            START: 0,
+            PLAYING: 1,
+            SHOP: 2,
+            GAMEOVER: 3
+        };
+        
+        let state = GAME_STATE.START;
+        let animationId;
+        let lastTime = 0;
+        
+        // Input
+        const keys = { w: false, a: false, s: false, d: false };
+        const mouse = { x: 0, y: 0, down: false };
+
+        // Game Entities
+        let player;
+        let bullets = [];
+        let zombies = [];
+        let particles = [];
+        let textParticles = [];
+
+        // Wave Logic
+        let wave = 1;
+        let money = 0;
+        let zombiesToSpawn = 0;
+        let spawnTimer = 0;
+        let spawnRate = 1000; // ms
+        
+        // Costs
+        let costs = {
+            damage: 200,
+            rate: 250,
+            speed: 150,
+            heal: 100,
+            multishot: 500
+        };
+
+        // --- Resizing ---
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- Classes ---
+
+        class Player {
+            constructor() {
+                this.x = width / 2;
+                this.y = height / 2;
+                this.radius = 15;
+                this.color = '#00ffcc';
+                
+                // Stats
+                this.maxHealth = 100;
+                this.health = 100;
+                this.speed = 4;
+                this.damage = 15;
+                this.fireRate = 250; // ms per shot
+                this.lastShot = 0;
+                this.multishotLevel = 1; // 1 = Single, 2 = Double, 3 = Triple
+            }
+
+            update(dt) {
+                // Movement
+                let dx = 0;
+                let dy = 0;
+                if (keys.w) dy -= 1;
+                if (keys.s) dy += 1;
+                if (keys.a) dx -= 1;
+                if (keys.d) dx += 1;
+
+                // Normalize vector
+                if (dx !== 0 || dy !== 0) {
+                    const len = Math.sqrt(dx * dx + dy * dy);
+                    dx /= len;
+                    dy /= len;
+                }
+
+                this.x += dx * this.speed;
+                this.y += dy * this.speed;
+
+                // Boundaries
+                this.x = Math.max(this.radius, Math.min(width - this.radius, this.x));
+                this.y = Math.max(this.radius, Math.min(height - this.radius, this.y));
+
+                // Shooting
+                if (mouse.down && Date.now() - this.lastShot > this.fireRate) {
+                    this.shoot();
+                }
+            }
+
+            shoot() {
+                const angle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+                const speed = 15;
+
+                const createBullet = (angleOffset) => {
+                     const velocity = {
+                        x: Math.cos(angle + angleOffset) * speed,
+                        y: Math.sin(angle + angleOffset) * speed
+                    };
+                    bullets.push(new Bullet(this.x, this.y, velocity, this.damage));
+                }
+
+                if (this.multishotLevel === 1) {
+                    // Single Shot
+                    createBullet(0);
+                } else if (this.multishotLevel === 2) {
+                    // Double Shot
+                    createBullet(-0.1);
+                    createBullet(0.1);
+                } else {
+                    // Triple Shot
+                    createBullet(-0.15);
+                    createBullet(0);
+                    createBullet(0.15);
+                }
+                
+                this.lastShot = Date.now();
+                
+                // Recoil kick
+                this.x -= Math.cos(angle) * 2;
+                this.y -= Math.sin(angle) * 2;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Rotate player towards mouse
+                const angle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+                ctx.rotate(angle);
+
+                // Body
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Gun barrels based on level
+                ctx.fillStyle = '#fff';
+                
+                if (this.multishotLevel === 1) {
+                     ctx.fillRect(0, -4, this.radius + 10, 8);
+                } else if (this.multishotLevel === 2) {
+                     ctx.fillRect(0, -8, this.radius + 10, 6);
+                     ctx.fillRect(0, 2, this.radius + 10, 6);
+                } else {
+                     ctx.fillRect(0, -10, this.radius + 8, 6);
+                     ctx.fillRect(0, -3, this.radius + 12, 6);
+                     ctx.fillRect(0, 4, this.radius + 8, 6);
+                }
+
+                ctx.restore();
+                
+                // Glow effect
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = this.color;
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, velocity, damage) {
+                this.x = x;
+                this.y = y;
+                this.velocity = velocity;
+                this.damage = damage;
+                this.radius = 4;
+                this.markedForDeletion = false;
+            }
+
+            update() {
+                this.x += this.velocity.x;
+                this.y += this.velocity.y;
+
+                if (this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
+                    this.markedForDeletion = true;
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = '#ffff00';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        class Zombie {
+            constructor(x, y, waveDifficulty) {
+                this.x = x;
+                this.y = y;
+                this.radius = 18;
+                this.color = '#ff0055';
+                
+                // Scaling stats
+                this.speed = 1.5 + (Math.random() * 1.5) + (waveDifficulty * 0.1);
+                this.maxHealth = 20 + (waveDifficulty * 10);
+                this.health = this.maxHealth;
+                this.damage = 10;
+                this.markedForDeletion = false;
+            }
+
+            update() {
+                // Move towards player
+                const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                this.x += Math.cos(angle) * this.speed;
+                this.y += Math.sin(angle) * this.speed;
+
+                // Collision with player
+                const dist = Math.hypot(player.x - this.x, player.y - this.y);
+                if (dist < this.radius + player.radius) {
+                    // Hit player
+                    player.health -= this.damage;
+                    updateUI();
+                    
+                    // Create particles
+                    createParticles(this.x, this.y, 10, '#ff0055');
+                    
+                    // Push zombie back
+                    this.x -= Math.cos(angle) * 50;
+                    this.y -= Math.sin(angle) * 50;
+                    
+                    if (player.health <= 0) {
+                        endGame();
+                    }
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                ctx.rotate(angle);
+
+                // Body
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eyes (Red glow)
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(6, -6, 3, 0, Math.PI*2);
+                ctx.arc(6, 6, 3, 0, Math.PI*2);
+                ctx.fill();
+
+                // Health Bar (only if damaged)
+                if (this.health < this.maxHealth) {
+                    ctx.rotate(-angle); // Reset rotation for health bar
+                    ctx.fillStyle = 'red';
+                    ctx.fillRect(-15, -25, 30, 4);
+                    ctx.fillStyle = '#0f0';
+                    ctx.fillRect(-15, -25, 30 * (this.health / this.maxHealth), 4);
+                }
+
+                ctx.restore();
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 3 + 1;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.alpha = 1;
+                this.decay = Math.random() * 0.03 + 0.01;
+                this.size = Math.random() * 3 + 2;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vx *= 0.95; // Friction
+                this.vy *= 0.95;
+                this.alpha -= this.decay;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.restore();
+            }
+        }
+
+        class FloatingText {
+            constructor(x, y, text, color) {
+                this.x = x;
+                this.y = y;
+                this.text = text;
+                this.color = color;
+                this.vy = -1;
+                this.alpha = 1;
+                this.life = 60;
+            }
+            update() {
+                this.y += this.vy;
+                this.life--;
+                if(this.life < 20) this.alpha -= 0.05;
+            }
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.font = "bold 16px sans-serif";
+                ctx.fillText(this.text, this.x, this.y);
+                ctx.restore();
+            }
+        }
+
+        // --- Core Functions ---
+
+        function createParticles(x, y, count, color) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        function spawnZombie() {
+            // Spawn on random edge
+            let x, y;
+            if (Math.random() < 0.5) {
+                x = Math.random() < 0.5 ? -30 : width + 30;
+                y = Math.random() * height;
+            } else {
+                x = Math.random() * width;
+                y = Math.random() < 0.5 ? -30 : height + 30;
+            }
+            zombies.push(new Zombie(x, y, wave));
+        }
+
+        function checkCollisions() {
+            bullets.forEach(bullet => {
+                zombies.forEach(zombie => {
+                    const dist = Math.hypot(bullet.x - zombie.x, bullet.y - zombie.y);
+                    if (dist < zombie.radius + bullet.radius) {
+                        // Hit
+                        zombie.health -= bullet.damage;
+                        bullet.markedForDeletion = true;
+                        createParticles(zombie.x, zombie.y, 3, zombie.color);
+
+                        if (zombie.health <= 0 && !zombie.markedForDeletion) {
+                            zombie.markedForDeletion = true;
+                            createParticles(zombie.x, zombie.y, 10, '#ff0055');
+                            const reward = 10 + Math.floor(wave * 2);
+                            money += reward;
+                            textParticles.push(new FloatingText(zombie.x, zombie.y, `+$${reward}`, '#ffff00'));
+                            updateUI();
+                        }
+                    }
+                });
+            });
+        }
+
+        function updateUI() {
+            document.getElementById('health-fill').style.width = `${Math.max(0, (player.health / player.maxHealth) * 100)}%`;
+            document.getElementById('health-text').innerText = `${Math.ceil(player.health)} / ${player.maxHealth}`;
+            document.getElementById('money-disp').innerText = money;
+            document.getElementById('wave-disp').innerText = wave;
+            document.getElementById('shop-money').innerText = money;
+        }
+
+        function showMessage(text) {
+            const el = document.getElementById('message-area');
+            el.innerText = text;
+            el.style.animation = 'none';
+            el.offsetHeight; /* trigger reflow */
+            el.style.animation = 'popUp 2s ease-out forwards';
+        }
+
+        // --- Main Game Loop ---
+
+        function update(timestamp) {
+            const dt = timestamp - lastTime;
+            lastTime = timestamp;
+
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.3)'; // Trail effect
+            ctx.fillRect(0, 0, width, height);
+
+            if (state === GAME_STATE.PLAYING) {
+                // Spawning
+                if (zombiesToSpawn > 0) {
+                    spawnTimer += dt;
+                    if (spawnTimer > spawnRate) {
+                        spawnZombie();
+                        zombiesToSpawn--;
+                        spawnTimer = 0;
+                    }
+                } else if (zombies.length === 0) {
+                    // Wave Cleared
+                    openShop();
+                }
+
+                player.update(dt);
+                
+                bullets.forEach(b => b.update());
+                bullets = bullets.filter(b => !b.markedForDeletion);
+
+                zombies.forEach(z => z.update());
+                zombies = zombies.filter(z => !z.markedForDeletion);
+                
+                checkCollisions();
+            }
+
+            // Visuals
+            player.draw();
+            bullets.forEach(b => b.draw());
+            zombies.forEach(z => z.draw());
+            
+            particles.forEach((p, index) => {
+                p.update();
+                p.draw();
+                if (p.alpha <= 0) particles.splice(index, 1);
+            });
+            
+            textParticles.forEach((t, index) => {
+                t.update();
+                t.draw();
+                if (t.life <= 0) textParticles.splice(index, 1);
+            });
+
+            if (state === GAME_STATE.PLAYING) {
+                animationId = requestAnimationFrame(update);
+            }
+        }
+
+        // --- Game Flow Control ---
+
+        function initGame() {
+            player = new Player();
+            bullets = [];
+            zombies = [];
+            particles = [];
+            money = 0;
+            wave = 1;
+            
+            // Initial costs
+            costs = { damage: 200, rate: 250, speed: 150, heal: 100, multishot: 500 };
+            
+            updateShopButtons();
+            startWave();
+        }
+
+        function startWave() {
+            state = GAME_STATE.PLAYING;
+            document.getElementById('start-screen').classList.remove('active');
+            document.getElementById('shop-screen').classList.remove('active');
+            document.getElementById('game-over-screen').classList.remove('active');
+            
+            // Difficulty scaling
+            zombiesToSpawn = 5 + Math.floor(wave * 2.5);
+            spawnRate = Math.max(200, 1000 - (wave * 50));
+            
+            updateUI();
+            showMessage(`WAVE ${wave}`);
+            
+            lastTime = performance.now();
+            update(performance.now());
+        }
+
+        function openShop() {
+            state = GAME_STATE.SHOP;
+            cancelAnimationFrame(animationId);
+            document.getElementById('shop-screen').classList.add('active');
+            document.getElementById('next-wave-num').innerText = wave + 1;
+            updateShopButtons();
+            
+            // Draw one last static frame
+            player.draw();
+        }
+
+        function startGame() {
+            initGame();
+        }
+
+        function nextWave() {
+            wave++;
+            startWave();
+        }
+
+        function endGame() {
+            state = GAME_STATE.GAMEOVER;
+            cancelAnimationFrame(animationId);
+            document.getElementById('final-wave').innerText = wave;
+            document.getElementById('game-over-screen').classList.add('active');
+        }
+
+        // --- Shop Logic ---
+
+        function updateShopButtons() {
+            // Update labels with current costs
+            document.getElementById('cost-damage').innerText = `$${costs.damage}`;
+            document.getElementById('cost-rate').innerText = `$${costs.rate}`;
+            document.getElementById('cost-speed').innerText = `$${costs.speed}`;
+            
+            if (player.multishotLevel >= 3) {
+                document.getElementById('cost-multi').innerText = 'MAX';
+            } else {
+                document.getElementById('cost-multi').innerText = `$${costs.multishot}`;
+            }
+            
+            // Enable/Disable based on money
+            document.getElementById('btn-heal').disabled = money < costs.heal || player.health >= player.maxHealth;
+            document.getElementById('btn-dmg').disabled = money < costs.damage;
+            document.getElementById('btn-rate').disabled = money < costs.rate;
+            document.getElementById('btn-speed').disabled = money < costs.speed;
+            
+            document.getElementById('btn-multi').disabled = money < costs.multishot || player.multishotLevel >= 3;
+        }
+
+        function buyUpgrade(type) {
+            if (type === 'heal') {
+                if (money >= costs.heal && player.health < player.maxHealth) {
+                    money -= costs.heal;
+                    player.health = Math.min(player.health + 30, player.maxHealth);
+                    // No cost increase for heal
+                }
+            } else if (type === 'damage') {
+                if (money >= costs.damage) {
+                    money -= costs.damage;
+                    player.damage += 5;
+                    costs.damage += 100;
+                }
+            } else if (type === 'rate') {
+                if (money >= costs.rate) {
+                    money -= costs.rate;
+                    player.fireRate = Math.max(50, player.fireRate * 0.9); // 10% faster
+                    costs.rate += 100;
+                }
+            } else if (type === 'speed') {
+                if (money >= costs.speed) {
+                    money -= costs.speed;
+                    player.speed += 0.5;
+                    costs.speed += 100;
+                }
+            } else if (type === 'multishot') {
+                if (money >= costs.multishot && player.multishotLevel < 3) {
+                    money -= costs.multishot;
+                    player.multishotLevel++;
+                    costs.multishot *= 2; // Price increases for triple shot
+                }
+            }
+            updateUI();
+            updateShopButtons();
+        }
+
+        // --- Event Listeners ---
+
+        window.addEventListener('keydown', e => {
+            if (e.key === 'w' || e.key === 'W') keys.w = true;
+            if (e.key === 'a' || e.key === 'A') keys.a = true;
+            if (e.key === 's' || e.key === 'S') keys.s = true;
+            if (e.key === 'd' || e.key === 'D') keys.d = true;
+        });
+
+        window.addEventListener('keyup', e => {
+            if (e.key === 'w' || e.key === 'W') keys.w = false;
+            if (e.key === 'a' || e.key === 'A') keys.a = false;
+            if (e.key === 's' || e.key === 'S') keys.s = false;
+            if (e.key === 'd' || e.key === 'D') keys.d = false;
+        });
+
+        window.addEventListener('mousemove', e => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+
+        window.addEventListener('mousedown', () => mouse.down = true);
+        window.addEventListener('mouseup', () => mouse.down = false);
+
+        // Initial render for background
+        ctx.fillStyle = '#050505';
+        ctx.fillRect(0,0,width,height);
+
+    </script>
+</body>
+</html>
