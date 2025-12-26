@@ -59,6 +59,26 @@
             color: var(--primary);
         }
 
+        /* Toast Notification */
+        #toast-notification {
+            position: absolute;
+            top: 15%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 0, 85, 0.95);
+            color: white;
+            padding: 12px 30px;
+            border-radius: 5px;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0 0 15px var(--danger);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+            border: 1px solid white;
+        }
+
         /* Menus (Start, Shop, Game Over) */
         .menu-overlay {
             position: absolute;
@@ -209,6 +229,7 @@
             </div>
             <div class="stat-box">CASH: $<span id="money-disp">0</span></div>
         </div>
+        <div id="toast-notification">Insufficient Funds</div>
         <div id="message-area">WAVE COMPLETE</div>
     </div>
 
@@ -217,7 +238,16 @@
         <h1>Zombie Perimeter</h1>
         <p>Survive the waves. Upgrade your gear. Don't die.</p>
         <p style="font-size: 0.9rem; color: #fff;">WASD to Move | Mouse to Aim & Shoot</p>
+        <p style="font-size: 0.9rem; color: var(--gold);">New: Press 'F' to Quick Heal ($100) | 'P' to Pause</p>
+        <p style="font-size: 0.9rem; color: var(--gold);">Keep track of updates: <a href="https://github.com/MeeladProE1/ZombiePerimeter/activity" target="_blank" style="color: var(--primary);">https://github.com/MeeladProE1/ZombiePerimeter/activity</a></p>
         <button onclick="startGame()">Initialize Combat</button>
+    </div>
+
+    <!-- Pause Screen -->
+    <div id="pause-screen" class="menu-overlay">
+        <h2>PAUSED</h2>
+        <p>Tactical Break</p>
+        <button onclick="togglePause()">Resume Mission</button>
     </div>
 
     <!-- Shop Screen -->
@@ -286,12 +316,14 @@
             START: 0,
             PLAYING: 1,
             SHOP: 2,
-            GAMEOVER: 3
+            GAMEOVER: 3,
+            PAUSED: 4
         };
         
         let state = GAME_STATE.START;
         let animationId;
         let lastTime = 0;
+        let toastTimeout;
         
         // Input
         const keys = { w: false, a: false, s: false, d: false };
@@ -663,6 +695,16 @@
             el.offsetHeight; /* trigger reflow */
             el.style.animation = 'popUp 2s ease-out forwards';
         }
+        
+        function showToast(msg) {
+            const el = document.getElementById('toast-notification');
+            el.innerText = msg;
+            el.style.opacity = '1';
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                el.style.opacity = '0';
+            }, 2000);
+        }
 
         // --- Main Game Loop ---
 
@@ -742,6 +784,7 @@
             document.getElementById('start-screen').classList.remove('active');
             document.getElementById('shop-screen').classList.remove('active');
             document.getElementById('game-over-screen').classList.remove('active');
+            document.getElementById('pause-screen').classList.remove('active');
             
             // Difficulty scaling
             zombiesToSpawn = 5 + Math.floor(wave * 2.5);
@@ -779,6 +822,37 @@
             cancelAnimationFrame(animationId);
             document.getElementById('final-wave').innerText = wave;
             document.getElementById('game-over-screen').classList.add('active');
+        }
+        
+        function togglePause() {
+            if (state === GAME_STATE.PLAYING) {
+                state = GAME_STATE.PAUSED;
+                document.getElementById('pause-screen').classList.add('active');
+                cancelAnimationFrame(animationId);
+            } else if (state === GAME_STATE.PAUSED) {
+                state = GAME_STATE.PLAYING;
+                document.getElementById('pause-screen').classList.remove('active');
+                lastTime = performance.now();
+                update(lastTime);
+            }
+        }
+        
+        function quickHeal() {
+             if (state !== GAME_STATE.PLAYING) return;
+             
+             if (money >= 100) {
+                 if (player.health < player.maxHealth) {
+                     money -= 100;
+                     player.health = Math.min(player.health + 30, player.maxHealth);
+                     updateUI();
+                     createParticles(player.x, player.y, 15, '#00ff00'); // Green heal particles
+                     textParticles.push(new FloatingText(player.x, player.y - 20, "+HP", "#00ff00"));
+                 } else {
+                     showToast("Health Already Full");
+                 }
+             } else {
+                 showToast("Need $100 to Repair");
+             }
         }
 
         // --- Shop Logic ---
@@ -847,6 +921,10 @@
             if (e.key === 'a' || e.key === 'A') keys.a = true;
             if (e.key === 's' || e.key === 'S') keys.s = true;
             if (e.key === 'd' || e.key === 'D') keys.d = true;
+            
+            // New Controls
+            if (e.key === 'p' || e.key === 'P') togglePause();
+            if (e.key === 'f' || e.key === 'F') quickHeal();
         });
 
         window.addEventListener('keyup', e => {
